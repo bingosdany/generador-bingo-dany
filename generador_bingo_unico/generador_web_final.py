@@ -6,7 +6,6 @@ import os
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet
 
 CARTONES_PATH = "cartones_usados.json"
 
@@ -49,43 +48,53 @@ def generar_cartones_unicos(n):
         intentos += 1
     return cartones
 
-def crear_pdf(nombre_archivo, cartones, comprador):
+def crear_pdf(nombre_archivo, cartones, comprador, base_numeros):
     c = canvas.Canvas(nombre_archivo, pagesize=letter)
     width, height = letter
 
-    c.setFont("Helvetica-Bold", 26)
-    c.setFillColor(colors.darkorange)
-    c.drawCentredString(width/2, height - 40, "🎉 Bingos Dany 🎉")
-
-    x_offsets = [30, 310]
-    y_offsets = [height - 140, height - 440]
+    x_offsets = [50, 320]
+    y_offsets = [height - 100, height - 400]
 
     index = 0
-    for fila in y_offsets:
-        for columna in x_offsets:
-            if index >= len(cartones):
-                break
-            dibujar_carton(c, cartones[index], columna, fila)
-            index += 1
+    numero_carton = 1
 
-    c.setFont("Helvetica-Bold", 20)
-    c.setFillColor(colors.black)
-    c.drawCentredString(width / 2, 40, f"Comprador: {comprador}")
+    for i in range(0, len(cartones), 4):
+        c.setFont("Helvetica-Bold", 18)
+        c.setFillColor(colors.darkorange)
+        c.drawCentredString(width/2, height - 30, "🎉 Bingos Dany 🎉")
 
-    c.showPage()
+        for fila_index, fila in enumerate(y_offsets):
+            for columna_index, columna in enumerate(x_offsets):
+                if index >= len(cartones):
+                    break
+                etiqueta = f"{base_numeros}-{numero_carton}"
+                mostrar_arriba = fila_index == 0
+                dibujar_carton(c, cartones[index], columna, fila, etiqueta, mostrar_arriba)
+                numero_carton += 1
+                index += 1
+
+        c.setFont("Helvetica-Bold", 14)
+        c.setFillColor(colors.black)
+        c.drawCentredString(width / 2, 30, f"Comprador: {comprador}")
+        c.showPage()
+
     c.save()
 
-def dibujar_carton(c, carton, x, y):
-    ancho_celda = 50
-    alto_celda = 50
+def dibujar_carton(c, carton, x, y, etiqueta, mostrar_arriba):
+    ancho_celda = 55
+    alto_celda = 55
     letras = ['B', 'I', 'N', 'G', 'O']
+
+    if mostrar_arriba:
+        c.setFont("Helvetica-Bold", 12)
+        c.drawCentredString(x + 125, y + 15, f"Cartón {etiqueta}")
 
     c.setFillColor(colors.whitesmoke)
     c.rect(x, y - alto_celda * 6, ancho_celda * 5, alto_celda * 6, fill=1)
 
     for i, letra in enumerate(letras):
         c.setFillColor(colors.darkblue)
-        c.setFont("Helvetica-Bold", 24)
+        c.setFont("Helvetica-Bold", 22)
         c.drawCentredString(x + i * ancho_celda + ancho_celda / 2, y, letra)
 
     c.setFont("Helvetica", 16)
@@ -98,6 +107,10 @@ def dibujar_carton(c, carton, x, y):
                 c.setFillColor(colors.black)
             c.drawCentredString(x + col_index * ancho_celda + ancho_celda / 2,
                                 y - (row_index + 1) * alto_celda + alto_celda / 3, str(valor))
+
+    if not mostrar_arriba:
+        c.setFont("Helvetica-Bold", 12)
+        c.drawCentredString(x + 125, y - alto_celda * 6 - 10, f"Cartón {etiqueta}")
 
 # INTERFAZ STREAMLIT
 st.markdown("<h1 style='text-align: center; color: orange;'>🎉 Generador de Cartones - Bingos Dany 🎉</h1>", unsafe_allow_html=True)
@@ -115,13 +128,16 @@ if st.button("Generar Cartones"):
     if cantidad and nombre_pdf and nombre_comprador:
         try:
             cantidad_lista = [int(x.strip()) for x in cantidad.split(',') if x.strip().isdigit()]
-            total = len(cantidad_lista)
+            total = len(cantidad_lista) * 4
             cartones_generados = generar_cartones_unicos(total)
-            crear_pdf(f"{nombre_pdf}.pdf", cartones_generados, nombre_comprador)
-            with open(f"{nombre_pdf}.pdf", "rb") as file:
-                st.download_button(label="📥 Descargar PDF", data=file, file_name=f"{nombre_pdf}.pdf")
+
+            base_numeros = "_".join(map(str, cantidad_lista))
+            nombre_archivo = f"{nombre_pdf}_{base_numeros}.pdf"
+            crear_pdf(nombre_archivo, cartones_generados, nombre_comprador, base_numeros)
+
+            with open(nombre_archivo, "rb") as file:
+                st.download_button(label="📥 Descargar PDF", data=file, file_name=nombre_archivo)
         except Exception as e:
             st.error(f"Ocurrió un error: {e}")
     else:
         st.warning("Por favor completa todos los campos.")
-
