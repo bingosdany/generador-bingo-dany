@@ -1,23 +1,14 @@
+
+import streamlit as st
 import random
 import json
+import os
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
-import streamlit as st
-import io
-import base64
-import os
+from reportlab.lib.styles import getSampleStyleSheet
 
-# Cargar historial de cartones
 CARTONES_PATH = "cartones_usados.json"
-if not os.path.exists(CARTONES_PATH):
-    with open(CARTONES_PATH, "w") as f:
-        json.dump({}, f)
-
-with open(CARTONES_PATH, "r") as f:
-    historial = json.load(f)
-
-st.markdown("<h1 style='text-align: center;'>🎯 Bingos Dany - Generador de Cartones Únicos</h1>", unsafe_allow_html=True)
 
 def generar_carton():
     columnas = {
@@ -25,135 +16,112 @@ def generar_carton():
         'I': random.sample(range(16, 31), 5),
         'N': random.sample(range(31, 46), 5),
         'G': random.sample(range(46, 61), 5),
-        'O': random.sample(range(61, 76), 5),
+        'O': random.sample(range(61, 76), 5)
     }
     columnas['N'][2] = 'FREE'
     return columnas
 
-def carton_a_str(columnas):
-    return str([columnas['B'], columnas['I'], columnas['N'], columnas['G'], columnas['O']])
+def carton_a_string(carton):
+    return '-'.join(str(item) for col in ['B','I','N','G','O'] for item in carton[col])
 
-def dibujar_marco_carnaval(c, width, height):
-    colores = [colors.red, colors.green, colors.blue, colors.orange, colors.purple]
-    grosor = 6
-    secciones = 10
-    ancho = (width - 40) / secciones
-    alto = (height - 40) / secciones
+def guardar_carton_usado(cadena):
+    usados = cargar_cartones_usados()
+    usados.append(cadena)
+    with open(CARTONES_PATH, 'w') as f:
+        json.dump(usados, f)
 
-    for i in range(secciones):
-        c.setLineWidth(grosor)
-        c.setStrokeColor(colores[i % len(colores)])
-        # arriba
-        c.line(20 + i * ancho, height - 20, 20 + (i + 1) * ancho, height - 20)
-        # abajo
-        c.line(20 + i * ancho, 20, 20 + (i + 1) * ancho, 20)
-        # izquierda
-        c.line(20, 20 + i * alto, 20, 20 + (i + 1) * alto)
-        # derecha
-        c.line(width - 20, 20 + i * alto, width - 20, 20 + (i + 1) * alto)
+def cargar_cartones_usados():
+    if os.path.exists(CARTONES_PATH):
+        with open(CARTONES_PATH, 'r') as f:
+            return json.load(f)
+    return []
 
-def dibujar_4_cartones_en_una_hoja(c, carton_id_base, columnas_list, comprador):
+def generar_cartones_unicos(n):
+    cartones = []
+    usados = set(cargar_cartones_usados())
+    intentos = 0
+    while len(cartones) < n and intentos < n * 10:
+        c = generar_carton()
+        s = carton_a_string(c)
+        if s not in usados:
+            guardar_carton_usado(s)
+            cartones.append(c)
+        intentos += 1
+    return cartones
+
+def crear_pdf(nombre_archivo, cartones, comprador):
+    c = canvas.Canvas(nombre_archivo, pagesize=letter)
     width, height = letter
-    cell_size = 38
-    margen_superior = 60
-    margen_lateral = 40
-    espaciado_horizontal = 30
-    espaciado_vertical = 30
 
+    c.setFont("Helvetica-Bold", 26)
+    c.setFillColor(colors.darkorange)
+    c.drawCentredString(width/2, height - 40, "🎉 Bingos Dany 🎉")
+
+    x_offsets = [30, 310]
+    y_offsets = [height - 140, height - 440]
+
+    index = 0
+    for fila in y_offsets:
+        for columna in x_offsets:
+            if index >= len(cartones):
+                break
+            dibujar_carton(c, cartones[index], columna, fila)
+            index += 1
+
+    c.setFont("Helvetica-Bold", 20)
+    c.setFillColor(colors.black)
+    c.drawCentredString(width / 2, 40, f"Comprador: {comprador}")
+
+    c.showPage()
+    c.save()
+
+def dibujar_carton(c, carton, x, y):
+    ancho_celda = 50
+    alto_celda = 50
     letras = ['B', 'I', 'N', 'G', 'O']
 
-    # Marco carnaval
-    dibujar_marco_carnaval(c, width, height)
+    c.setFillColor(colors.whitesmoke)
+    c.rect(x, y - alto_celda * 6, ancho_celda * 5, alto_celda * 6, fill=1)
 
-    # Título decorativo
-    c.setFont("Times-BoldItalic", 22)
-    c.setFillColor(colors.black)
-    c.drawCentredString(width / 2, height - 40, "🎉 Bingos Dany 🎉")
-
-    posiciones = [
-        (margen_lateral, height / 2 + espaciado_vertical / 2),
-        (width / 2 + espaciado_horizontal / 2, height / 2 + espaciado_vertical / 2),
-        (margen_lateral, margen_superior),
-        (width / 2 + espaciado_horizontal / 2, margen_superior)
-    ]
-
-    for i, columnas in enumerate(columnas_list):
-        x_offset, y_offset = posiciones[i]
-        c.setFont("Helvetica-Bold", 9)
-        c.setFillColor(colors.black)
-        c.drawCentredString(x_offset + cell_size * 2.5, y_offset + cell_size * 5.5, f"CARTÓN {carton_id_base}-{i+1}")
-
-        c.setFont("Helvetica-Bold", 8)
-        for j, letra in enumerate(letras):
-            c.drawCentredString(x_offset + j * cell_size + cell_size / 2, y_offset + cell_size * 5.2, letra)
-
-        c.setLineWidth(0.5)
-        c.setFont("Helvetica", 7)
-        for col, letra in enumerate(letras):
-            for fila in range(5):
-                y = y_offset + (4 - fila) * cell_size
-                c.rect(x_offset + col * cell_size, y, cell_size, cell_size)
-                valor = columnas[letra][fila]
-                if valor == 'FREE':
-                    c.setFillColor(colors.red)
-                    c.drawCentredString(x_offset + col * cell_size + cell_size / 2, y + cell_size / 2 - 3, "FREE")
-                    c.setFillColor(colors.black)
-                else:
-                    c.drawCentredString(x_offset + col * cell_size + cell_size / 2, y + cell_size / 2 - 3, str(valor))
-
-    # Nombre grande al pie
-    if comprador:
-        c.setFont("Times-BoldItalic", 22)
+    for i, letra in enumerate(letras):
         c.setFillColor(colors.darkblue)
-        c.drawCentredString(width / 2, 30, f"👤 {comprador.upper()}")
-    c.showPage()
+        c.setFont("Helvetica-Bold", 24)
+        c.drawCentredString(x + i * ancho_celda + ancho_celda / 2, y, letra)
 
-# ==== INTERFAZ ====
-numeros_texto = st.text_input("Escribe los números de cartones separados por coma (ej: 5,11,25,33):")
-archivo_nombre = st.text_input("Escribe el nombre del archivo PDF a generar (sin extensión):")
-comprador = st.text_input("Nombre del comprador que aparecerá en el PDF:")
+    c.setFont("Helvetica", 16)
+    for col_index, letra in enumerate(letras):
+        for row_index in range(5):
+            valor = carton[letra][row_index]
+            if valor == 'FREE':
+                c.setFillColor(colors.lightgrey)
+                c.rect(x + col_index * ancho_celda, y - (row_index + 1) * alto_celda, ancho_celda, alto_celda, fill=1)
+                c.setFillColor(colors.black)
+            c.drawCentredString(x + col_index * ancho_celda + ancho_celda / 2,
+                                y - (row_index + 1) * alto_celda + alto_celda / 3, str(valor))
+
+# INTERFAZ STREAMLIT
+st.markdown("<h1 style='text-align: center; color: orange;'>🎉 Generador de Cartones - Bingos Dany 🎉</h1>", unsafe_allow_html=True)
+
+if st.button("🧹 Limpiar historial de cartones usados"):
+    with open(CARTONES_PATH, "w") as f:
+        json.dump([], f)
+    st.success("✅ Historial de cartones limpiado. Puedes generar nuevos cartones sin restricciones.")
+
+cantidad = st.text_input("Escribe los números de cartones que quieres generar separados por coma (ej: 1,2,3):")
+nombre_pdf = st.text_input("Nombre del archivo PDF:", "cartones_bingo")
+nombre_comprador = st.text_input("Nombre del comprador:")
 
 if st.button("Generar Cartones"):
-    try:
-        numeros = [num.strip() for num in numeros_texto.split(",") if num.strip()]
-        usados = [num for num in numeros if any(k.startswith(num + '-') for k in historial)]
+    if cantidad and nombre_pdf and nombre_comprador:
+        try:
+            cantidad_lista = [int(x.strip()) for x in cantidad.split(',') if x.strip().isdigit()]
+            total = len(cantidad_lista)
+            cartones_generados = generar_cartones_unicos(total)
+            crear_pdf(f"{nombre_pdf}.pdf", cartones_generados, nombre_comprador)
+            with open(f"{nombre_pdf}.pdf", "rb") as file:
+                st.download_button(label="📥 Descargar PDF", data=file, file_name=f"{nombre_pdf}.pdf")
+        except Exception as e:
+            st.error(f"Ocurrió un error: {e}")
+    else:
+        st.warning("Por favor completa todos los campos.")
 
-        if usados:
-            st.error(f"❌ Los siguientes números de cartón ya fueron utilizados: {', '.join(usados)}")
-        else:
-            buffer = io.BytesIO()
-            c = canvas.Canvas(buffer, pagesize=letter)
-
-            for carton_id in numeros:
-                cartones_en_hoja = []
-                subindice = 1
-                intentos = 0
-
-                while len(cartones_en_hoja) < 4 and intentos < 200:
-                    columnas = generar_carton()
-                    clave = carton_a_str(columnas)
-                    intentos += 1
-
-                    if clave not in [carton_a_str(h) for h in historial.values()] and clave not in [carton_a_str(h) for h in cartones_en_hoja]:
-                        cartones_en_hoja.append(columnas)
-                        historial[f"{carton_id}-{subindice}"] = columnas
-                        subindice += 1
-
-                if len(cartones_en_hoja) == 4:
-                    dibujar_4_cartones_en_una_hoja(c, carton_id, cartones_en_hoja, comprador)
-                else:
-                    st.warning(f"⚠️ No se pudieron generar 4 cartones únicos para el número {carton_id}.")
-
-            c.save()
-            buffer.seek(0)
-            b64_pdf = base64.b64encode(buffer.read()).decode()
-
-            with open(CARTONES_PATH, "w") as f:
-                json.dump(historial, f)
-
-            st.success(f"✅ Archivo generado correctamente con {len(numeros)} páginas.")
-            href = f'<a href="data:application/pdf;base64,{b64_pdf}" download="{archivo_nombre.strip()}.pdf">📥 Descargar PDF</a>'
-            st.markdown(href, unsafe_allow_html=True)
-
-    except Exception as e:
-        st.error(f"❌ Error al generar los cartones: {e}")
